@@ -55,7 +55,8 @@ class BridgeEngine:
         session_map: Dict[str, List[Dict[str, Any]]] = {}
         for ent in all_entities:
             sid = ent.get("metadata", {}).get("session_id") or ent.get("session_id", "")
-            if not sid or not ent.get("embedding"):
+            emb = ent.get("embedding")
+            if not sid or emb is None or (hasattr(emb, '__len__') and len(emb) == 0):
                 continue
             session_map.setdefault(sid, []).append(ent)
 

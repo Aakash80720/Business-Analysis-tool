@@ -1,76 +1,97 @@
 """
-Graph builder — constructs a knowledge graph from entities + ChromaDB embeddings.
+Knowledge-graph builder — contextual, LLM-extracted relationships + hyperedges.
 
-Dual-mode:
-  • If Neo4j is available → persist to Neo4j and query back
-  • Fallback             → in-memory NetworkX (original behaviour)
+Pipeline
+--------
+1.  **Similarity edges** (cosine on ChromaDB embeddings) — fast, statistical.
+2.  **LLM-extracted edges** (via ChatOpenAI) — labeled, directional, business-aware.
+3.  **Hyperedges** (LLM) — a single concept connecting 3+ entities.
 
-Single Responsibility: translates DB entities → graph data structure.
-Embeddings are fetched from ChromaDB (not from SQL).
+Dual-mode persistence:
+  • Neo4j   → rich traversal + RAG expansion
+  • SQL     → Edge / HyperEdge tables (always persisted)
+  • In-memory NetworkX fallback for analytics
 """
 
 from __future__ import annotations
 
+import json
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import networkx as nx
 from sklearn.metrics.pairwise import cosine_similarity
 
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
 from ..config import get_settings
-from ..models.schemas import GraphNode, GraphEdge
+from ..prompts import RELATIONSHIP_EXTRACTION_SYSTEM, RELATIONSHIP_EXTRACTION_HUMAN
+from ..models.schemas import GraphNode, GraphEdge, HyperEdgeOut
+
+logger = logging.getLogger(__name__)
+
+# Maximum entities sent to the LLM per batch (keeps token count manageable)
+_LLM_BATCH_SIZE = 40
 
 
 # ═══════════════════════════════════════════════════════
-#  Graph Builder (in-memory fallback + Neo4j integration)
+#  Knowledge-Graph Builder
 # ═══════════════════════════════════════════════════════
 
 class GraphBuilder:
     """
-    Builds a force-directed-graph-ready data structure from entities
-    and their embeddings (pulled from ChromaDB).
+    Constructs a full knowledge graph (nodes, labeled edges, hyperedges)
+    from business entities and their embeddings.
 
-    Edges are created between entities whose cosine similarity exceeds
-    ``similarity_threshold``.
+    Usage::
+
+        builder = GraphBuilder()
+        nodes, edges = builder.build(entity_dicts, chroma_data)
+        llm_edges, hyperedges = await builder.extract_relationships(entity_dicts)
     """
 
     def __init__(self, similarity_threshold: float = 0.75) -> None:
         self._threshold = similarity_threshold
 
+    # ─────────────────────────────────────────────────
+    #  In-memory graph (nodes + similarity edges)
+    # ─────────────────────────────────────────────────
+
     def build(
         self,
         entities: List[Dict[str, Any]],
         chroma_data: Optional[List[Dict[str, Any]]] = None,
+        extra_edges: Optional[List[GraphEdge]] = None,
+        hyperedges: Optional[List[HyperEdgeOut]] = None,
     ) -> Tuple[List[GraphNode], List[GraphEdge]]:
         """
         Build the in-memory graph representation.
 
-        Parameters
-        ----------
-        entities    : entity dicts (id, content, entity_type, cluster_id, document_id, token_count)
-        chroma_data : optional pre-fetched ChromaDB results with embeddings
-                      [{id, embedding, …}]
-
-        Returns (nodes, edges).
+        Returns (nodes, edges) — edges include both similarity and any
+        ``extra_edges`` (e.g. LLM-extracted labeled relationships).
         """
         nodes: List[GraphNode] = []
         edges: List[GraphEdge] = []
 
-        # Build embedding lookup from ChromaDB data
         emb_lookup: Dict[str, list] = {}
         if chroma_data:
             for cd in chroma_data:
-                if cd.get("embedding"):
-                    emb_lookup[cd["id"]] = cd["embedding"]
+                emb = cd.get("embedding")
+                if emb is not None and len(emb) > 0:
+                    emb_lookup[cd["id"]] = emb if isinstance(emb, list) else list(emb)
 
-        # --- entity nodes ---
         embeddings: List[np.ndarray] = []
         entity_ids: List[str] = []
 
         for ent in entities:
+            full_content = ent.get("content", "")
             nodes.append(GraphNode(
                 id=ent["id"],
-                label=ent["content"][:80],
+                label=full_content[:120],
+                content=full_content,
                 type="entity",
                 entity_type=ent.get("entity_type", "Custom"),
                 cluster_id=ent.get("cluster_id"),
@@ -79,20 +100,26 @@ class GraphBuilder:
                     "token_count": ent.get("token_count", 0),
                 },
             ))
-
             emb = emb_lookup.get(ent["id"])
-            if emb:
+            if emb is not None and len(emb) > 0:
                 embeddings.append(np.array(emb))
                 entity_ids.append(ent["id"])
 
-        # --- similarity edges ---
+        # Similarity edges
         if len(embeddings) >= 2:
-            sim_edges = self._compute_similarity_edges(
-                entity_ids, np.array(embeddings),
+            edges.extend(
+                self._compute_similarity_edges(entity_ids, np.array(embeddings))
             )
-            edges.extend(sim_edges)
+
+        # Merge LLM-extracted edges
+        if extra_edges:
+            edges.extend(extra_edges)
 
         return nodes, edges
+
+    # ─────────────────────────────────────────────────
+    #  Similarity (cosine) edges
+    # ─────────────────────────────────────────────────
 
     def _compute_similarity_edges(
         self,
@@ -110,6 +137,7 @@ class GraphBuilder:
                         target=ids[j],
                         weight=float(round(sim_matrix[i, j], 4)),
                         edge_type="similarity",
+                        relationship_type="similarity",
                     ))
         return edges
 
@@ -117,15 +145,13 @@ class GraphBuilder:
         self,
         entities_with_embeddings: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """
-        Compute similarity edges and return as plain dicts
-        for Neo4j batch insertion / Edge record creation.
-        """
+        """Return similarity edges as plain dicts for DB / Neo4j insertion."""
         embeddings: List[np.ndarray] = []
         entity_ids: List[str] = []
         for ent in entities_with_embeddings:
-            if ent.get("embedding"):
-                embeddings.append(np.array(ent["embedding"]))
+            emb = ent.get("embedding")
+            if emb is not None and len(emb) > 0:
+                embeddings.append(np.array(emb))
                 entity_ids.append(ent["id"])
 
         if len(embeddings) < 2:
@@ -145,15 +171,143 @@ class GraphBuilder:
                     })
         return result
 
+    # ─────────────────────────────────────────────────
+    #  LLM-based relationship extraction
+    # ─────────────────────────────────────────────────
+
+    async def extract_relationships(
+        self,
+        entities: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Use an LLM to extract labeled, directional relationships and
+        hyperedges from a list of business entities.
+
+        Parameters
+        ----------
+        entities : list of dicts with keys ``id``, ``content``, ``entity_type``
+
+        Returns
+        -------
+        (edges, hyperedges) — each as a list of plain dicts ready for DB
+        insertion.
+
+        ``edges``      : [{source_entity_id, target_entity_id, relationship_type,
+                           confidence, explanation}, …]
+        ``hyperedges``  : [{label, relationship_type, member_ids:[…],
+                           confidence, explanation}, …]
+        """
+        if len(entities) < 2:
+            return [], []
+
+        cfg = get_settings()
+        llm = ChatOpenAI(
+            model=cfg.openai_model,
+            api_key=cfg.openai_api_key,
+            temperature=0.0,
+        )
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", RELATIONSHIP_EXTRACTION_SYSTEM),
+            ("human", RELATIONSHIP_EXTRACTION_HUMAN),
+        ])
+        chain = prompt | llm | StrOutputParser()
+
+        # Collect valid entity ids for validation
+        valid_ids = {e["id"] for e in entities}
+
+        all_edges: List[Dict[str, Any]] = []
+        all_hyperedges: List[Dict[str, Any]] = []
+
+        # Process in batches to stay within context limits
+        for start in range(0, len(entities), _LLM_BATCH_SIZE):
+            batch = entities[start: start + _LLM_BATCH_SIZE]
+            entities_block = "\n".join(
+                f"- id={e['id']}  type={e.get('entity_type', 'Custom')}  "
+                f"content=\"{e['content'][:300]}\""
+                for e in batch
+            )
+
+            try:
+                raw = await chain.ainvoke({"entities_block": entities_block})
+                parsed = self._parse_llm_json(raw)
+            except Exception:
+                logger.warning("LLM relationship extraction failed for batch starting at %d", start, exc_info=True)
+                continue
+
+            # --- validate & normalise edges ---
+            for edge in parsed.get("edges", []):
+                src = edge.get("source", "")
+                tgt = edge.get("target", "")
+                if src not in valid_ids or tgt not in valid_ids or src == tgt:
+                    continue
+                all_edges.append({
+                    "source_entity_id": src,
+                    "target_entity_id": tgt,
+                    "relationship_type": edge.get("relationship", "related_to"),
+                    "confidence": min(max(float(edge.get("confidence", 0.5)), 0.0), 1.0),
+                    "explanation": edge.get("explanation", "")[:512],
+                })
+
+            # --- validate & normalise hyperedges ---
+            for he in parsed.get("hyperedges", []):
+                member_ids = [m for m in he.get("member_ids", []) if m in valid_ids]
+                if len(member_ids) < 3:
+                    continue
+                all_hyperedges.append({
+                    "label": he.get("label", "")[:512],
+                    "relationship_type": he.get("relationship", "related_to"),
+                    "member_ids": member_ids,
+                    "confidence": min(max(float(he.get("confidence", 0.5)), 0.0), 1.0),
+                    "explanation": he.get("explanation", "")[:512],
+                })
+
+        return all_edges, all_hyperedges
+
+    # ─────────────────────────────────────────────────
+    #  Helpers
+    # ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_llm_json(raw: str) -> Dict[str, Any]:
+        """Robustly parse LLM JSON output, stripping markdown fences if present."""
+        text = raw.strip()
+        if text.startswith("```"):
+            # Remove opening fence (```json or ```)
+            text = text.split("\n", 1)[-1]
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+        return json.loads(text.strip())
+
+    @staticmethod
+    def edges_to_graph_edges(edge_dicts: List[Dict[str, Any]]) -> List[GraphEdge]:
+        """Convert raw edge dicts to ``GraphEdge`` schema objects."""
+        return [
+            GraphEdge(
+                source=e["source_entity_id"],
+                target=e["target_entity_id"],
+                weight=e.get("confidence", 0.5),
+                edge_type=e.get("relationship_type", "related_to"),
+                relationship_type=e.get("relationship_type", "related_to"),
+                explanation=e.get("explanation", ""),
+            )
+            for e in edge_dicts
+        ]
+
     @staticmethod
     def to_networkx(
         nodes: List[GraphNode],
         edges: List[GraphEdge],
     ) -> nx.Graph:
-        """Optional: materialise as a NetworkX graph for advanced analytics."""
-        G = nx.Graph()
+        """Materialise as a NetworkX graph for analytical queries."""
+        G = nx.DiGraph()
         for n in nodes:
             G.add_node(n.id, **n.model_dump())
         for e in edges:
-            G.add_edge(e.source, e.target, weight=e.weight, edge_type=e.edge_type)
+            G.add_edge(
+                e.source, e.target,
+                weight=e.weight,
+                edge_type=e.edge_type,
+                relationship_type=e.relationship_type,
+            )
         return G

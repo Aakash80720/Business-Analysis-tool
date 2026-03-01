@@ -65,7 +65,7 @@ export default function DocumentUploader({ sessionId, onUploaded }: Props) {
         className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${
           dragging
             ? "border-primary bg-primary/10"
-            : "border-white/10 hover:border-white/20"
+            : "border-[var(--border)] hover:border-primary/30"
         }`}
       >
         <input

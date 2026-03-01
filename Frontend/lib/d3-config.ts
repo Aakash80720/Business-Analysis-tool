@@ -1,21 +1,52 @@
 /**
  * D3 force-simulation configuration — shared constants & factory.
+ * Aligned with entity-type knowledge graph (no clusters).
  */
 
 import type { GraphNode, GraphEdge } from "./api-client";
 
 // ═══════════════════════════════════════════════════════
-//  Colour palette
+//  Entity-type colour palette
 // ═══════════════════════════════════════════════════════
 
-const CLUSTER_COLORS = [
-  "#6366f1", "#22d3ee", "#f59e0b", "#10b981",
-  "#ef4444", "#a855f7", "#ec4899", "#14b8a6",
-  "#f97316", "#3b82f6",
-];
+export const ENTITY_COLORS: Record<string, string> = {
+  Goal: "#34d399",
+  KPI: "#60a5fa",
+  OKR: "#a78bfa",
+  Risk: "#f87171",
+  Action: "#fbbf24",
+  Owner: "#fb923c",
+  Metric: "#38bdf8",
+  Custom: "#71717a",
+};
 
-export function clusterColor(index: number): string {
-  return CLUSTER_COLORS[index % CLUSTER_COLORS.length];
+export function entityColor(entityType?: string | null): string {
+  if (!entityType) return ENTITY_COLORS.Custom;
+  return ENTITY_COLORS[entityType] ?? ENTITY_COLORS.Custom;
+}
+
+// ═══════════════════════════════════════════════════════
+//  Relationship-type colour palette
+// ═══════════════════════════════════════════════════════
+
+export const RELATIONSHIP_COLORS: Record<string, string> = {
+  achieved_by: "#34d399",
+  measured_by: "#60a5fa",
+  depends_on: "#a78bfa",
+  mitigates: "#fbbf24",
+  owns: "#fb923c",
+  supports: "#818cf8",
+  contradicts: "#f87171",
+  threatens: "#ef4444",
+  related_to: "#38bdf8",
+  similarity: "#475569",
+  bridge: "#f59e0b",
+  default: "#475569",
+};
+
+export function relationshipColor(relType?: string): string {
+  if (!relType) return RELATIONSHIP_COLORS.default;
+  return RELATIONSHIP_COLORS[relType] ?? RELATIONSHIP_COLORS.default;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -23,7 +54,11 @@ export function clusterColor(index: number): string {
 // ═══════════════════════════════════════════════════════
 
 export function nodeRadius(node: GraphNode): number {
-  return node.type === "cluster" ? 28 : 10;
+  // Base size with slight randomness from metadata count
+  const base = 12;
+  const metaCount = node.metadata ? Object.keys(node.metadata).length : 0;
+  const extra = Math.min(metaCount * 2, 8);
+  return base + extra;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -31,21 +66,14 @@ export function nodeRadius(node: GraphNode): number {
 // ═══════════════════════════════════════════════════════
 
 export const FORCE_CONFIG = {
-  chargeStrength: -120,
+  chargeStrength: -600,
   linkDistance: (edge: GraphEdge) => {
-    switch (edge.edge_type) {
-      case "hierarchy":
-        return 60;
-      case "similarity":
-        return 100 / (edge.weight + 0.01);
-      case "bridge":
-        return 200;
-      default:
-        return 100;
-    }
+    if (edge.edge_type === "bridge") return 380;
+    // Scale by weight — higher weight = shorter link
+    return 180 + (1 - Math.min(edge.weight, 1)) * 140;
   },
-  centerStrength: 0.05,
-  collisionRadius: 14,
+  centerStrength: 0.04,
+  collisionRadius: 140,
 } as const;
 
 // ═══════════════════════════════════════════════════════
@@ -53,22 +81,22 @@ export const FORCE_CONFIG = {
 // ═══════════════════════════════════════════════════════
 
 export function edgeStroke(edge: GraphEdge): string {
-  switch (edge.edge_type) {
-    case "hierarchy":
-      return "#6366f1";
-    case "similarity":
-      return "#475569";
-    case "bridge":
-      return "#f59e0b";
-    default:
-      return "#475569";
-  }
+  if (edge.edge_type === "bridge") return RELATIONSHIP_COLORS.bridge;
+  return relationshipColor(edge.relationship_type);
 }
 
 export function edgeWidth(edge: GraphEdge): number {
-  return edge.edge_type === "bridge" ? 2 : Math.max(0.5, edge.weight * 3);
+  if (edge.edge_type === "bridge") return 2.5;
+  return Math.max(1, Math.min(edge.weight * 4, 4));
 }
 
 export function edgeDash(edge: GraphEdge): string {
-  return edge.edge_type === "bridge" ? "6 3" : "none";
+  if (edge.edge_type === "bridge") return "6 3";
+  if (edge.relationship_type === "contradicts") return "4 2";
+  return "none";
 }
+
+export function edgeOpacity(edge: GraphEdge): number {
+  return Math.max(0.3, Math.min(edge.weight, 0.85));
+}
+

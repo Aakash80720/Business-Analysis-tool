@@ -105,14 +105,14 @@ async def upload_document(
             kg = KnowledgeGraphService()
             await kg.upsert_session(session_id, session.name)
             await kg.upsert_document(doc.id, session_id, doc.filename)
-            await kg.upsert_chunks(
+            await kg.upsert_entities(
                 [
                     {
                         "id": e.id,
                         "content": e.content,
+                        "entity_type": e.entity_type,
                         "document_id": e.document_id,
                         "token_count": e.token_count,
-                        "context": e.metadata_.get("context", ""),
                     }
                     for e in entity_records
                 ],

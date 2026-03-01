@@ -243,7 +243,7 @@ class ChatEngine:
                 return {"graph_context": []}
 
             seed_ids = [e["id"] for e in top_entities]
-            neighbours = await graph_svc.get_chunk_neighbours(seed_ids, depth=2)
+            neighbours = await graph_svc.get_entity_neighbours(seed_ids, depth=2)
             top_ids = {e["id"] for e in top_entities}
             unique_neighbours = [n for n in neighbours if n["id"] not in top_ids]
             return {"graph_context": unique_neighbours[:10]}

@@ -42,7 +42,7 @@ async def generate_embeddings(
     # Check which entities already have embeddings in ChromaDB
     store = get_chroma_store()
     existing = store.get_by_ids([e.id for e in entities])
-    existing_ids = {item["id"] for item in existing if item.get("embedding")}
+    existing_ids = {item["id"] for item in existing if item.get("embedding") is not None and len(item["embedding"]) > 0}
     to_embed = [e for e in entities if e.id not in existing_ids]
 
     if not to_embed:

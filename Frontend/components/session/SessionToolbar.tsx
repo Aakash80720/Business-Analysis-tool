@@ -1,54 +1,51 @@
 "use client";
 
+import { ArrowLeft, Upload, Sparkles, FileText, Layers } from "lucide-react";
 import type { SessionOut } from "@/lib/api-client";
 
 interface Props {
   session: SessionOut;
   onEmbed: () => void;
-  onCluster: (method: string) => void;
+  onBuildGraph: () => void;
   onBack: () => void;
 }
 
 /**
- * SessionToolbar — header controls for embedding, clustering, navigation.
+ * SessionToolbar — header controls for embedding, graph building, navigation.
  */
 export default function SessionToolbar({
   session,
   onEmbed,
-  onCluster,
+  onBuildGraph,
   onBack,
 }: Props) {
   return (
-    <header className="flex items-center gap-4 px-6 py-3 border-b border-white/10 bg-surface">
+    <header className="glass flex items-center gap-4 px-6 py-2.5 border-b border-[var(--border)] shrink-0">
       <button
         onClick={onBack}
-        className="text-[var(--text-muted)] hover:text-white transition text-sm"
+        className="p-2 rounded-lg hover:bg-surface-light text-[var(--text-muted)] hover:text-white transition"
       >
-        ← Back
+        <ArrowLeft size={16} />
       </button>
-      <h2 className="text-lg font-semibold truncate flex-1">{session.title}</h2>
-      <span className="text-xs text-[var(--text-muted)]">
-        {session.document_count} docs · {session.chunk_count} chunks ·{" "}
-        {session.cluster_count} clusters
+      <h2 className="text-sm font-semibold truncate flex-1">{session.name}</h2>
+      <span className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+        <FileText size={12} /> {session.document_count} docs
+      </span>
+      <span className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+        <Layers size={12} /> {session.entity_count} entities
       </span>
 
       <button
         onClick={onEmbed}
-        className="px-4 py-2 rounded-lg bg-accent/20 text-accent text-xs font-medium hover:bg-accent/30 transition"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface hover:bg-surface-light border border-[var(--border)] text-[var(--text-secondary)] hover:text-white transition"
       >
-        Generate Embeddings
+        <Upload size={12} /> Embeddings
       </button>
       <button
-        onClick={() => onCluster("kmeans")}
-        className="px-4 py-2 rounded-lg bg-primary/20 text-primary text-xs font-medium hover:bg-primary/30 transition"
+        onClick={onBuildGraph}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition"
       >
-        K-Means
-      </button>
-      <button
-        onClick={() => onCluster("hierarchical")}
-        className="px-4 py-2 rounded-lg bg-primary/20 text-primary text-xs font-medium hover:bg-primary/30 transition"
-      >
-        Hierarchical
+        <Sparkles size={12} /> Build Graph
       </button>
     </header>
   );

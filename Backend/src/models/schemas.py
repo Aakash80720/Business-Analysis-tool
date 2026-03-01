@@ -127,6 +127,7 @@ class EmbeddingResult(BaseModel):
 class GraphNode(BaseModel):
     id: str
     label: str
+    content: str = ""                # full entity text
     type: str                         # entity | cluster
     entity_type: Optional[str] = None  # Goal|KPI|OKR|…
     cluster_id: Optional[int] = None
@@ -139,13 +140,32 @@ class GraphEdge(BaseModel):
     source: str
     target: str
     weight: float = 1.0
-    edge_type: str = "similarity"      # similarity|achieved_by|measured_by|threatens|supports|bridge
+    edge_type: str = "similarity"
+    relationship_type: str = "similarity"   # achieved_by|measured_by|threatens|supports|mitigates|owns|depends_on|contradicts|related_to|similarity|bridge
+    explanation: str = ""
+
+
+class HyperEdgeOut(BaseModel):
+    """A hyperedge connecting 3+ entities under one contextual concept."""
+    id: str
+    label: str
+    relationship_type: str
+    member_ids: List[str]
+    confidence: float = 0.5
+    explanation: str = ""
 
 
 class GraphResponse(BaseModel):
     session_id: str
     nodes: List[GraphNode]
     edges: List[GraphEdge]
+    hyperedges: List[HyperEdgeOut] = []
+
+
+class KnowledgeGraphBuildRequest(BaseModel):
+    session_id: str
+    include_similarity: bool = True
+    similarity_threshold: float = 0.75
 
 
 class BridgeResponse(BaseModel):

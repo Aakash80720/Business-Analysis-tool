@@ -15,7 +15,8 @@ from sqlalchemy.orm import selectinload
 
 from .db import (
     Organisation, User, Session, Document, Entity,
-    Edge, SessionBridge, ChatMessage, CostLog,
+    Edge, SessionBridge, HyperEdge, HyperEdgeMember,
+    ChatMessage, CostLog,
 )
 
 
@@ -174,6 +175,26 @@ class SessionBridgeRepository(BaseRepository[SessionBridge]):
 
     async def delete_all(self) -> None:
         await self._db.execute(delete(SessionBridge))
+        await self._db.flush()
+
+
+class HyperEdgeRepository(BaseRepository[HyperEdge]):
+    """Hyperedges connecting 3+ entities."""
+    model = HyperEdge
+
+    async def list_by_session(self, session_id: str) -> List[HyperEdge]:
+        result = await self._db.execute(
+            select(HyperEdge)
+            .where(HyperEdge.session_id == session_id)
+            .options(selectinload(HyperEdge.members))
+        )
+        return list(result.scalars().all())
+
+    async def delete_by_session(self, session_id: str) -> None:
+        # Members cascade-delete with hyperedge
+        await self._db.execute(
+            delete(HyperEdge).where(HyperEdge.session_id == session_id)
+        )
         await self._db.flush()
 
 

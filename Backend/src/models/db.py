@@ -173,8 +173,9 @@ class Edge(Base):
     session_id        = Column(String(32), ForeignKey("sessions.id"), nullable=False)
     source_entity_id  = Column(String(32), ForeignKey("entities.id"), nullable=False)
     target_entity_id  = Column(String(32), ForeignKey("entities.id"), nullable=False)
-    relationship_type = Column(String(64), default="similarity")  # achieved_by|measured_by|threatens|supports|similarity
+    relationship_type = Column(String(64), default="similarity")  # achieved_by|measured_by|threatens|supports|mitigates|owns|depends_on|contradicts|related_to|similarity
     confidence        = Column(Float, default=1.0)
+    explanation       = Column(Text, default="")
     created_at        = Column(DateTime(timezone=True), default=_utcnow)
 
     session       = relationship("Session", back_populates="edges")
@@ -200,6 +201,38 @@ class SessionBridge(Base):
     session_b = relationship("Session", foreign_keys=[session_b_id])
     entity_a  = relationship("Entity", foreign_keys=[entity_a_id])
     entity_b  = relationship("Entity", foreign_keys=[entity_b_id])
+
+
+class HyperEdge(Base):
+    """
+    A hyperedge connects 3+ entities under a single contextual concept.
+    e.g. 'All Q3 revenue goals measured by these KPIs'
+    Members are stored in the HyperEdgeMember table.
+    """
+    __tablename__ = "hyperedges"
+
+    id                = Column(String(32), primary_key=True, default=_uuid)
+    session_id        = Column(String(32), ForeignKey("sessions.id"), nullable=False)
+    label             = Column(String(512), default="")
+    relationship_type = Column(String(64), default="related_to")
+    confidence        = Column(Float, default=0.5)
+    explanation       = Column(Text, default="")
+    created_at        = Column(DateTime(timezone=True), default=_utcnow)
+
+    session = relationship("Session")
+    members = relationship("HyperEdgeMember", back_populates="hyperedge", cascade="all, delete-orphan")
+
+
+class HyperEdgeMember(Base):
+    """Junction table: links an entity to a hyperedge."""
+    __tablename__ = "hyperedge_members"
+
+    id            = Column(String(32), primary_key=True, default=_uuid)
+    hyperedge_id  = Column(String(32), ForeignKey("hyperedges.id"), nullable=False)
+    entity_id     = Column(String(32), ForeignKey("entities.id"), nullable=False)
+
+    hyperedge = relationship("HyperEdge", back_populates="members")
+    entity    = relationship("Entity")
 
 
 class ChatMessage(Base):

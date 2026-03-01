@@ -2,21 +2,153 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens ── */
 :root {
-  --bg: #0f0f1a;
-  --surface: #1e1e2e;
-  --surface-light: #2a2a3e;
-  --text: #e2e8f0;
-  --text-muted: #94a3b8;
-  --primary: #6366f1;
-  --accent: #22d3ee;
+  --bg:            #09090b;
+  --bg-subtle:     #0f0f14;
+  --surface:       #18181b;
+  --surface-light: #27272a;
+  --surface-hover: #2e2e33;
+  --border:        rgba(255 255 255 / 0.07);
+  --border-hover:  rgba(255 255 255 / 0.14);
+  --text:          #fafafa;
+  --text-secondary:#a1a1aa;
+  --text-muted:    #71717a;
+  --primary:       #818cf8;
+  --primary-hover: #6366f1;
+  --primary-muted: rgba(129 140 248 / 0.12);
+  --accent:        #22d3ee;
+  --accent-muted:  rgba(34 211 238 / 0.12);
+  --success:       #34d399;
+  --warning:       #fbbf24;
+  --danger:        #f87171;
+  --ring:          rgba(129 140 248 / 0.35);
+
+  /* relationship-type palette */
+  --rel-achieved_by: #34d399;
+  --rel-measured_by: #60a5fa;
+  --rel-threatens:   #f87171;
+  --rel-supports:    #a78bfa;
+  --rel-mitigates:   #fbbf24;
+  --rel-owns:        #fb923c;
+  --rel-depends_on:  #38bdf8;
+  --rel-contradicts: #f472b6;
+  --rel-related_to:  #71717a;
+  --rel-similarity:  #3f3f46;
+  --rel-bridge:      #fbbf24;
 }
 
+/* ── Base ── */
 body {
   @apply bg-[var(--bg)] text-[var(--text)] antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--surface-light); border-radius: 3px; }
+/* ── Scrollbar ── */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--surface-light); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--surface-hover); }
+
+/* ── Focus ring ── */
+*:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── Selection ── */
+::selection {
+  background: var(--primary-muted);
+  color: var(--text);
+}
+
+/* ── Glass surface ── */
+.glass {
+  @apply backdrop-blur-xl;
+  background: rgba(24 24 27 / 0.72);
+  border: 1px solid var(--border);
+}
+
+/* ── Glow card hover ── */
+.glow-card {
+  position: relative;
+  overflow: hidden;
+}
+.glow-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, transparent 40%, var(--primary) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+.glow-card:hover::before {
+  opacity: 1;
+}
+
+/* ── Shimmer skeleton ── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-light) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* ── Fade in ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  animation: fadeIn 0.4s ease-out both;
+}
+
+/* ── Pulse dot ── */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+.pulse-dot {
+  animation: pulseDot 1.4s ease-in-out infinite;
+}
+
+/* ── Graph tooltip ── */
+.graph-tooltip {
+  @apply absolute pointer-events-none px-3 py-2 rounded-lg text-xs shadow-xl z-50;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  max-width: 280px;
+}
+
+/* ── Entity-type colours (for graph nodes) ── */
+.entity-Goal    { --node-color: #34d399; }
+.entity-KPI     { --node-color: #60a5fa; }
+.entity-OKR     { --node-color: #a78bfa; }
+.entity-Risk    { --node-color: #f87171; }
+.entity-Action  { --node-color: #fbbf24; }
+.entity-Owner   { --node-color: #fb923c; }
+.entity-Custom  { --node-color: #71717a; }
+
+/* ── Prose for chat markdown ── */
+.chat-prose {
+  @apply prose prose-invert prose-sm max-w-none;
+  --tw-prose-body: var(--text);
+  --tw-prose-headings: var(--text);
+  --tw-prose-code: var(--primary);
+}
+.chat-prose code {
+  @apply bg-[var(--surface-light)] px-1.5 py-0.5 rounded text-xs font-mono;
+}
+.chat-prose pre {
+  @apply bg-[var(--bg)] rounded-lg p-3 text-xs overflow-x-auto;
+}

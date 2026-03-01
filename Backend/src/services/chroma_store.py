@@ -149,10 +149,10 @@ class ChromaStore:
         for i, eid in enumerate(results["ids"][0]):
             items.append({
                 "id": eid,
-                "content": (results["documents"][0][i] if results["documents"] else ""),
-                "embedding": (results["embeddings"][0][i] if results["embeddings"] else []),
-                "distance": (results["distances"][0][i] if results["distances"] else 0.0),
-                "metadata": (results["metadatas"][0][i] if results["metadatas"] else {}),
+                "content": (results["documents"][0][i] if results["documents"] is not None else ""),
+                "embedding": (results["embeddings"][0][i] if results["embeddings"] is not None else []),
+                "distance": (results["distances"][0][i] if results["distances"] is not None else 0.0),
+                "metadata": (results["metadatas"][0][i] if results["metadatas"] is not None else {}),
             })
         return items
 
@@ -171,9 +171,9 @@ class ChromaStore:
         for i, eid in enumerate(results["ids"]):
             items.append({
                 "id": eid,
-                "content": results["documents"][i] if results["documents"] else "",
-                "embedding": results["embeddings"][i] if results["embeddings"] else [],
-                "metadata": results["metadatas"][i] if results["metadatas"] else {},
+                "content": results["documents"][i] if results["documents"] is not None else "",
+                "embedding": results["embeddings"][i] if results["embeddings"] is not None else [],
+                "metadata": results["metadatas"][i] if results["metadatas"] is not None else {},
             })
         return items
 
@@ -190,9 +190,9 @@ class ChromaStore:
         for i, eid in enumerate(results["ids"]):
             items.append({
                 "id": eid,
-                "content": results["documents"][i] if results["documents"] else "",
-                "embedding": results["embeddings"][i] if results["embeddings"] else [],
-                "metadata": results["metadatas"][i] if results["metadatas"] else {},
+                "content": results["documents"][i] if results["documents"] is not None else "",
+                "embedding": results["embeddings"][i] if results["embeddings"] is not None else [],
+                "metadata": results["metadatas"][i] if results["metadatas"] is not None else {},
             })
         return items
 
@@ -216,9 +216,9 @@ class ChromaStore:
         for i, eid in enumerate(results["ids"]):
             items.append({
                 "id": eid,
-                "content": results["documents"][i] if results["documents"] else "",
-                "embedding": results["embeddings"][i] if results["embeddings"] else [],
-                "metadata": results["metadatas"][i] if results["metadatas"] else {},
+                "content": results["documents"][i] if results["documents"] is not None else "",
+                "embedding": results["embeddings"][i] if results["embeddings"] is not None else [],
+                "metadata": results["metadatas"][i] if results["metadatas"] is not None else {},
             })
         return items
 

@@ -8,7 +8,7 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // ═══════════════════════════════════════════════════════
-//  Types
+//  Types (aligned with backend schemas.py)
 // ═══════════════════════════════════════════════════════
 
 export interface TokenResponse {
@@ -20,12 +20,12 @@ export interface TokenResponse {
 
 export interface SessionOut {
   id: string;
-  title: string;
-  description: string;
+  name: string;
+  visibility: string;
   owner_id: string;
+  org_id?: string | null;
   document_count: number;
-  chunk_count: number;
-  cluster_count: number;
+  entity_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -36,49 +36,86 @@ export interface DocumentOut {
   filename: string;
   file_type: string;
   page_count: number;
-  chunk_count: number;
-  created_at: string;
+  entity_count: number;
+  uploaded_at: string;
 }
 
 export interface EmbeddingResult {
   session_id: string;
-  chunks_embedded: number;
+  entities_embedded: number;
   tokens_used: number;
   cost_usd: number;
 }
 
-export interface ClusterOut {
+export interface EntityOut {
   id: string;
-  label: string;
-  summary: string;
-  method: string;
-  level: number;
-  chunk_count: number;
-  parent_id: string | null;
+  session_id: string;
+  document_id: string;
+  entity_type: string;
+  content: string;
+  token_count: number;
+  cluster_id?: number | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
+
+export type EntityType =
+  | "Goal"
+  | "KPI"
+  | "OKR"
+  | "Risk"
+  | "Action"
+  | "Owner"
+  | "Custom";
 
 export interface GraphNode {
   id: string;
   label: string;
-  type: "chunk" | "cluster";
-  cluster_id?: string | null;
+  content?: string;
+  type: string;
+  entity_type?: string | null;
+  cluster_id?: number | null;
   metadata: Record<string, unknown>;
   x?: number | null;
   y?: number | null;
 }
 
+export type RelationshipType =
+  | "achieved_by"
+  | "measured_by"
+  | "threatens"
+  | "supports"
+  | "mitigates"
+  | "owns"
+  | "depends_on"
+  | "contradicts"
+  | "related_to"
+  | "similarity"
+  | "bridge";
+
 export interface GraphEdge {
   source: string;
   target: string;
   weight: number;
-  edge_type: "similarity" | "hierarchy" | "bridge";
+  edge_type: string;
+  relationship_type: RelationshipType;
+  explanation: string;
+}
+
+export interface HyperEdge {
+  id: string;
+  label: string;
+  relationship_type: string;
+  member_ids: string[];
+  confidence: number;
+  explanation: string;
 }
 
 export interface GraphResponse {
   session_id: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
-  clusters: ClusterOut[];
+  hyperedges: HyperEdge[];
 }
 
 export interface ChatResponse {
@@ -136,7 +173,6 @@ class ApiClient {
     const tk = this.loadToken();
     if (tk) headers["Authorization"] = `Bearer ${tk}`;
 
-    // Don't set Content-Type for FormData (browser sets boundary)
     if (!(options.body instanceof FormData)) {
       headers["Content-Type"] = "application/json";
     }
@@ -176,10 +212,10 @@ class ApiClient {
     return this.request<{ sessions: SessionOut[] }>("/api/sessions");
   }
 
-  createSession(title: string, description = "") {
+  createSession(name: string, visibility = "private") {
     return this.request<SessionOut>("/api/sessions", {
       method: "POST",
-      body: JSON.stringify({ title, description }),
+      body: JSON.stringify({ name, visibility }),
     });
   }
 
@@ -230,20 +266,23 @@ class ApiClient {
     return this.request<GraphResponse>(`/api/graph/${sessionId}`);
   }
 
-  clusterSession(sessionId: string, method = "kmeans", nClusters?: number) {
-    return this.request<ClusterOut[]>("/api/graph/cluster", {
+  buildGraph(
+    sessionId: string,
+    options?: { includeSimilarity?: boolean; similarityThreshold?: number },
+  ) {
+    return this.request<GraphResponse>("/api/graph/build", {
       method: "POST",
       body: JSON.stringify({
         session_id: sessionId,
-        method,
-        n_clusters: nClusters ?? null,
+        include_similarity: options?.includeSimilarity ?? true,
+        similarity_threshold: options?.similarityThreshold ?? 0.75,
       }),
     });
   }
 
   getBridges(sessionIds: string[] = []) {
     const params = sessionIds.map((s) => `session_ids=${s}`).join("&");
-    return this.request<{ edges: GraphEdge[]; session_ids: string[] }>(
+    return this.request<{ bridges: GraphEdge[]; session_ids: string[] }>(
       `/api/graph/bridges?${params}`,
     );
   }
