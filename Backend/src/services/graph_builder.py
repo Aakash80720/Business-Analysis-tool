@@ -66,15 +66,20 @@ class GraphBuilder:
         chroma_data: Optional[List[Dict[str, Any]]] = None,
         extra_edges: Optional[List[GraphEdge]] = None,
         hyperedges: Optional[List[HyperEdgeOut]] = None,
+        annotations: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Tuple[List[GraphNode], List[GraphEdge]]:
         """
         Build the in-memory graph representation.
 
         Returns (nodes, edges) — edges include both similarity and any
         ``extra_edges`` (e.g. LLM-extracted labeled relationships).
+
+        ``annotations`` maps entity id → {label, entity_type, properties}
+        from the LLM extraction pass.
         """
         nodes: List[GraphNode] = []
         edges: List[GraphEdge] = []
+        ann = annotations or {}
 
         emb_lookup: Dict[str, list] = {}
         if chroma_data:
@@ -88,17 +93,29 @@ class GraphBuilder:
 
         for ent in entities:
             full_content = ent.get("content", "")
+            ent_ann = ann.get(ent["id"], {})
+            # Use LLM-generated label if available, else derive from content
+            label = ent_ann.get("label", "") or full_content[:120]
+            # Use refined entity type from LLM if available
+            entity_type = ent_ann.get("entity_type", "") or ent.get("entity_type", "Custom")
+            # Merge extracted properties into metadata
+            properties = ent_ann.get("properties", {})
+            base_meta = {
+                "document_id": ent.get("document_id", ""),
+                "token_count": ent.get("token_count", 0),
+            }
+            # Properties go into metadata under a 'properties' key and also top-level
+            merged_meta = {**base_meta, **properties}
+
             nodes.append(GraphNode(
                 id=ent["id"],
-                label=full_content[:120],
+                label=label,
                 content=full_content,
                 type="entity",
-                entity_type=ent.get("entity_type", "Custom"),
+                entity_type=entity_type,
                 cluster_id=ent.get("cluster_id"),
-                metadata={
-                    "document_id": ent.get("document_id", ""),
-                    "token_count": ent.get("token_count", 0),
-                },
+                metadata=merged_meta,
+                properties=properties,
             ))
             emb = emb_lookup.get(ent["id"])
             if emb is not None and len(emb) > 0:
@@ -178,10 +195,11 @@ class GraphBuilder:
     async def extract_relationships(
         self,
         entities: List[Dict[str, Any]],
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
         """
-        Use an LLM to extract labeled, directional relationships and
-        hyperedges from a list of business entities.
+        Use an LLM to extract labeled, directional relationships,
+        hyperedges, and per-entity annotations (label, properties, refined type)
+        from a list of business entities.
 
         Parameters
         ----------
@@ -189,16 +207,16 @@ class GraphBuilder:
 
         Returns
         -------
-        (edges, hyperedges) — each as a list of plain dicts ready for DB
-        insertion.
+        (edges, hyperedges, entity_annotations)
 
-        ``edges``      : [{source_entity_id, target_entity_id, relationship_type,
-                           confidence, explanation}, …]
-        ``hyperedges``  : [{label, relationship_type, member_ids:[…],
-                           confidence, explanation}, …]
+        ``edges``               : [{source_entity_id, target_entity_id, relationship_type,
+                                    confidence, explanation}, …]
+        ``hyperedges``          : [{label, relationship_type, member_ids:[…],
+                                    confidence, explanation}, …]
+        ``entity_annotations``  : {entity_id: {label, entity_type, properties:{…}}, …}
         """
         if len(entities) < 2:
-            return [], []
+            return [], [], {}
 
         cfg = get_settings()
         llm = ChatOpenAI(
@@ -218,6 +236,7 @@ class GraphBuilder:
 
         all_edges: List[Dict[str, Any]] = []
         all_hyperedges: List[Dict[str, Any]] = []
+        all_annotations: Dict[str, Dict[str, Any]] = {}
 
         # Process in batches to stay within context limits
         for start in range(0, len(entities), _LLM_BATCH_SIZE):
@@ -234,6 +253,17 @@ class GraphBuilder:
             except Exception:
                 logger.warning("LLM relationship extraction failed for batch starting at %d", start, exc_info=True)
                 continue
+
+            # --- parse entity annotations ---
+            for ann in parsed.get("entities", []):
+                eid = ann.get("id", "")
+                if eid not in valid_ids:
+                    continue
+                all_annotations[eid] = {
+                    "label": ann.get("label", "")[:256],
+                    "entity_type": ann.get("entity_type", "Custom"),
+                    "properties": ann.get("properties", {}),
+                }
 
             # --- validate & normalise edges ---
             for edge in parsed.get("edges", []):
@@ -262,7 +292,7 @@ class GraphBuilder:
                     "explanation": he.get("explanation", "")[:512],
                 })
 
-        return all_edges, all_hyperedges
+        return all_edges, all_hyperedges, all_annotations
 
     # ─────────────────────────────────────────────────
     #  Helpers

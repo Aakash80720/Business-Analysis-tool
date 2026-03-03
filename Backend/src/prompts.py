@@ -55,14 +55,19 @@ RAG_SYSTEM_TEMPLATE = (
 # ═══════════════════════════════════════════════════════
 
 # Extracts labeled, directional relationships between business entities.
+# Also annotates each entity with a short label, refined type, and properties.
 # Returns JSON array — no markdown, no explanation.
 RELATIONSHIP_EXTRACTION_SYSTEM = (
     "You are a knowledge-graph construction engine for business analysis.\n"
     "You receive a list of ENTITIES (each with an id, type, and content) "
     "that belong to the same session.\n\n"
     "Your job:\n"
-    "1. Identify meaningful RELATIONSHIPS between pairs of entities.\n"
-    "2. Identify HYPEREDGES — single concepts that connect 3+ entities.\n\n"
+    "1. ANNOTATE each entity with a short label, refined entity type, "
+    "and extracted key properties.\n"
+    "2. Identify meaningful RELATIONSHIPS between pairs of entities.\n"
+    "3. Identify HYPEREDGES — single concepts that connect 3+ entities.\n\n"
+    "## Entity type labels (use EXACTLY these):\n"
+    "  Goal  KPI  OKR  Risk  Action  Owner  Metric  Custom\n\n"
     "## Relationship types (use EXACTLY these labels):\n"
     "  achieved_by   — a Goal/OKR is achieved by an Action/KPI\n"
     "  measured_by    — a Goal/OKR is measured by a KPI/Metric\n"
@@ -75,23 +80,36 @@ RELATIONSHIP_EXTRACTION_SYSTEM = (
     "  related_to     — catch-all for other meaningful links\n\n"
     "## Output format — STRICT JSON, no markdown fences:\n"
     "{\n"
+    '  "entities": [\n'
+    '    {"id": "<id>", "label": "short name (3-8 words)", '
+    '"entity_type": "<refined type>", '
+    '"properties": {"key": "value", ...}}\n'
+    "  ],\n"
     '  "edges": [\n'
     '    {"source": "<id>", "target": "<id>", '
     '"relationship": "<type>", "confidence": 0.0-1.0, '
     '"explanation": "short reason"}\n'
     "  ],\n"
     '  "hyperedges": [\n'
-    '    {"label": "short label", "relationship": "<type>", '
+    '    {"label": "short descriptive group label", "relationship": "<type>", '
     '"member_ids": ["<id>", "<id>", ...], '
     '"confidence": 0.0-1.0, "explanation": "short reason"}\n'
     "  ]\n"
     "}\n\n"
     "Rules:\n"
+    "• For each entity, extract a concise human-readable label (3-8 words) "
+    "summarising what it is.\n"
+    "• entity_type should be refined based on the content — pick the best "
+    "match from the allowed types above.\n"
+    "• properties: extract 2-6 key-value pairs from the content "
+    "(e.g. target_value, owner, deadline, metric_unit, priority, status).\n"
     "• Only create edges where a real business relationship exists.\n"
     "• A hyperedge groups 3+ entities sharing ONE contextual concept "
     "(e.g. 'All Q3 revenue goals measured by these KPIs').\n"
+    "• Hyperedge label should be descriptive (e.g. 'Q3 Revenue Growth Cluster').\n"
     "• confidence reflects how certain you are (0.5 = plausible, 0.9 = very clear).\n"
     "• Do NOT invent entities. Use only the provided ids.\n"
+    "• Every entity in the input MUST appear in the entities output array.\n"
     "• Return ONLY the JSON object. No preamble."
 )
 

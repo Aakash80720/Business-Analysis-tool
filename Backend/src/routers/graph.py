@@ -118,7 +118,7 @@ async def build_graph(
         for e in entities
     ]
 
-    llm_edge_dicts, hyperedge_dicts = await builder.extract_relationships(entity_dicts)
+    llm_edge_dicts, hyperedge_dicts, entity_annotations = await builder.extract_relationships(entity_dicts)
 
     # ── 3. Persist to SQL ──
     edge_repo = EdgeRepository(db)
@@ -187,7 +187,11 @@ async def build_graph(
 
     # ── 4. Build response ──
     llm_graph_edges = GraphBuilder.edges_to_graph_edges(llm_edge_dicts)
-    nodes, edges = builder.build(entity_dicts, chroma_data, extra_edges=llm_graph_edges)
+    nodes, edges = builder.build(
+        entity_dicts, chroma_data,
+        extra_edges=llm_graph_edges,
+        annotations=entity_annotations,
+    )
 
     # ── 5. Neo4j sync (best-effort) ──
     neo4j_entity_dicts = [

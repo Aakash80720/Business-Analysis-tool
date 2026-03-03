@@ -126,12 +126,13 @@ class EmbeddingResult(BaseModel):
 
 class GraphNode(BaseModel):
     id: str
-    label: str
-    content: str = ""                # full entity text
-    type: str                         # entity | cluster
-    entity_type: Optional[str] = None  # Goal|KPI|OKR|…
+    label: str                         # short LLM-generated name (3-8 words)
+    content: str = ""                  # full entity text
+    type: str                           # entity | cluster
+    entity_type: Optional[str] = None   # Goal|KPI|OKR|Risk|Action|Owner|Metric|Custom
     cluster_id: Optional[int] = None
     metadata: Dict[str, Any] = {}
+    properties: Dict[str, Any] = {}     # LLM-extracted key-value properties
     x: Optional[float] = None
     y: Optional[float] = None
 

@@ -76,6 +76,7 @@ export interface GraphNode {
   entity_type?: string | null;
   cluster_id?: number | null;
   metadata: Record<string, unknown>;
+  properties?: Record<string, unknown>;
   x?: number | null;
   y?: number | null;
 }
